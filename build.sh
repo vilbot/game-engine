@@ -17,11 +17,13 @@ IMGUI_SRC=(
     third_party/imgui/backends/imgui_impl_sdlrenderer3.cpp
 )
 
-if [[ $1 == -p || $1 == --platform || ! -f build/game ]]; then
+if [[ $1 == -p || $1 == --platform || ! -f build/game ||
+      code/sdl_platform.cpp -nt build/game || code/game.h -nt build/game ]]; then
+
     clang++ "${FLAGS[@]}" code/sdl_platform.cpp "${IMGUI_SRC[@]}" -o build/game \
         -Ithird_party/SDL/include \
         -Lbuild -lSDL3 -Wl,-rpath,@executable_path
 fi
 
-clang++ "${FLAGS[@]}" -dynamiclib code/game.cpp -o build/libgame.dylib.tmp
+clang++ "${FLAGS[@]}" -undefined dynamic_lookup -dynamiclib code/game.cpp -o build/libgame.dylib.tmp
 mv -f build/libgame.dylib.tmp build/libgame.dylib

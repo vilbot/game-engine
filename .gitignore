@@ -8,3 +8,6 @@
 /replay.hmi
 libgame_temp_*.dylib
 *.dSYM/
+
+# Dear ImGui runtime layout (window positions, docking) - regenerated on exit
+/imgui.ini
