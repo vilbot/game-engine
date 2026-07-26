@@ -7,7 +7,7 @@ struct game_state {
     float tone_sine;
 };
 
-void game_get_sound_samples(game_memory* memory, game_sound_output_buffer* sound_buffer) {
+GAME_API void game_get_sound_samples(game_memory* memory, game_sound_output_buffer* sound_buffer) {
     game_state* state = (game_state*)memory->permanent_storage;
 
     int tone_hz = state->tone_hz;
@@ -21,12 +21,12 @@ void game_get_sound_samples(game_memory* memory, game_sound_output_buffer* sound
         int16_t value = (int16_t)(sinf(state->tone_sine) * tone_volume);
         *sample_out++ = value;
         *sample_out++ = value;
-        state->tone_sine += 2.0f * (float)M_PI / (float)samples_per_period;
-        if (state->tone_sine > 2.0f * (float)M_PI) state->tone_sine -= 2.0f * (float)M_PI;
+        state->tone_sine += 2.0f * Pi32 / (float)samples_per_period;
+        if (state->tone_sine > 2.0f * Pi32) state->tone_sine -= 2.0f * Pi32;
     }
 }
 
-void game_update_and_render(game_memory* memory, game_offscreen_buffer* buffer, game_input* input) {
+GAME_API void game_update_and_render(game_memory* memory, game_offscreen_buffer* buffer, game_input* input) {
     game_state* state = (game_state*)memory->permanent_storage;
 
     if(!memory->is_initialized) {

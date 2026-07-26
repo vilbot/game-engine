@@ -1,8 +1,15 @@
 # Windows port — de-POSIX spec
 
-Companion to TODO.md §3. The toolchain and build are done and verified; the code
-changes below are yours to write. Line numbers refer to the state of the tree at
-commit `e486603`.
+Companion to TODO.md §3. Line numbers refer to the tree at commit `e486603`.
+
+> **Status: done.** The port is complete and running on Windows — `build.bat`
+> builds clean under `-Wall -Wextra -Werror`, `build\game.exe` holds 60 fps with
+> audio at a 10 ms device period, and hot reload works (verified live: rebuilding
+> the DLL under a running engine loads a new temp copy without dropping the
+> process, at the cost of one ~58 ms frame).
+>
+> Everything below is kept as the record of *why* each change is shaped the way
+> it is. Two things remain unverified — see "Still to verify" at the end.
 
 ## Already done (tooling)
 
@@ -173,12 +180,28 @@ Win64 (128 TB of user address space, and it's 64 KB-granularity aligned).
 - `snprintf`, `SDL_GetPathInfo`, `SDL_CopyFile`, `SDL_GlobDirectory`, the audio
   callback, the frame-pacing code.
 
-## Suggested order
+## Surfaced during the build, not predicted above
 
-1. `game.h` + `game.cpp` (Pi32, GAME_API) → `build.bat -g` goes green.
-2. B + C (loadso + naming constant) — portable, do it on any platform.
-3. D (file I/O) — portable.
-4. E (memory) — the only `#ifdef`.
-5. `build.bat`, run `build\game.exe`, re-run the Quest 9/10 checklists here;
-   hot reload and replay are the likely breakage points.
-6. Re-run `./build.sh` on macOS — steps 1–4 are portable, but confirm.
+Three `-Werror` failures that `build.sh` never showed, because it passes no
+warning flags at all (CLAUDE.md claims otherwise; it's wrong):
+
+- **`main`'s parameters are not exempt from `-Wunused-parameter` here.** The
+  usual exemption applies to *the* `main`, but `SDL_main.h` `#define`s `main` to
+  `SDL_main`, so it's an ordinary function. Parameters are now unnamed.
+- `total_amount` in the audio callback — unused, now unnamed.
+- **`fopen` is deprecated by the UCRT** in favour of `fopen_s`. It's standard C
+  and the code is correct, so this is silenced with `-D_CRT_SECURE_NO_WARNINGS`
+  in `build.bat` rather than worked around in the source.
+
+## Still to verify
+
+- **Input replay (Quest 10)** — needs a live `L` keypress, so it was not
+  exercised. The memory-snapshot path it depends on is `memcpy` over the block
+  and is platform-neutral, but the `fopen`/`fwrite` replay file is worth one
+  manual run.
+- **macOS still builds.** Sections B–D are portable and E branches cleanly, but
+  this could not be compiled on macOS from here. Re-run `./build.sh` there.
+  The one change to look at first is `game.h`'s `#elif defined(__APPLE__)` —
+  it was originally `#elseif defined(___APPLE__)`, which is not a directive the
+  preprocessor recognizes, so macOS would have silently fallen through to the
+  `.so` branch and looked for a `libgame.so` that never exists.
