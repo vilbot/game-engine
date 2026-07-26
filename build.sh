@@ -3,6 +3,12 @@
 if [[ ! -f build/libSDL3.0.dylib ]]; then
     cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     cmake --build build --target SDL3-shared --parallel
+
+    # add_subdirectory() makes CMake mirror the source tree, so SDL lands in
+    # build/third_party/SDL/ — but the link line is -Lbuild and the rpath is
+    # @executable_path, i.e. build/. Copy it up. -a keeps libSDL3.dylib a
+    # symlink instead of a second 4 MB copy. build.bat does this for SDL3.dll.
+    cp -a build/third_party/SDL/libSDL3.0.dylib build/third_party/SDL/libSDL3.dylib build/
 fi
 
 FLAGS=(-Ithird_party/imgui -Ithird_party/imgui/backends)
