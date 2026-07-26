@@ -1,0 +1,10 @@
+/build/
+/.cache/
+/compile_commands.json
+
+# runtime artifacts (DEBUG file I/O test, hot reload, replay), can land at
+# repo root or in build/ depending on the cwd the executable was launched from
+/test_copy.cpp
+/replay.hmi
+libgame_temp_*.dylib
+*.dSYM/
