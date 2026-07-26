@@ -36,7 +36,9 @@ code compiles as two direct clang++ invocations inside the script.
 - `build.sh` sets the project flags (`-Wall -Wextra -Werror … -fno-exceptions
   -fno-rtti -DBUILD_INTERNAL=1 -DBUILD_SLOW=1`); `CMakeLists.txt` still compiles
   flagless — parity is a TODO item.
-- Not a git repository yet.
+- Git: `main` is the integration branch; work happens on topic branches (`imgui`,
+  `windows-port`) and merges back. Remote is `origin`
+  (github.com/vilbot/game-engine).
 
 ## Layout
 

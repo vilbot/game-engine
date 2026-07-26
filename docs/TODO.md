@@ -87,9 +87,10 @@ moves mixing into the game with explicit sync).
 
 ## 4. Cleanup / quality
 
-- [ ] **`git init` + `.gitignore`** (`build/`, `.cache/`, `test_copy.cpp`) —
-      there is currently *no version control*. First commit before touching
-      anything above.
+- [x] **`git init` + `.gitignore`** — done 2026-07-26. `main` is the
+      integration branch; topic branches (`imgui`, `windows-port`) merge into
+      it. `.gitignore` covers `build/`, `.cache/`, `compile_commands.json`,
+      the replay/hot-reload runtime artifacts, and `imgui.ini`.
 - [ ] Rename the global `close()` in `sdl_platform.cpp` — it overloads POSIX
       `close(int)`; works today, but one signature typo away from calling the
       wrong one.
