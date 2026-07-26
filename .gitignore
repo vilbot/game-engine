@@ -7,4 +7,8 @@
 /test_copy.cpp
 /replay.hmi
 libgame_temp_*.dylib
+libgame_temp_*.so
+libgame_temp_*.dll
 *.dSYM/
+*.pdb
+*.ilk
