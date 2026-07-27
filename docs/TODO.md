@@ -67,29 +67,30 @@ moves mixing into the game with explicit sync).
 
 ## 3. Windows + Linux ports
 
-- [ ] **De-POSIX `sdl_platform.cpp`** — the file currently uses `dlopen`/
-      `dlsym`, `open`/`read`/`write`, `mmap`, `unistd.h`; none exist on
-      Windows. SDL already wraps most of it portably: `SDL_LoadObject`/
-      `SDL_LoadFunction`/`SDL_UnloadObject` for the dylib, `SDL_IOStream` (or
-      stdio) for debug file I/O. Keep memory as the one real `#ifdef`
-      (`mmap` / `VirtualAlloc`) since the fixed-base debug hint needs platform
-      code anyway. Doing this on macOS first makes the ports mostly build work.
-- [ ] **Per-platform library naming**: `"libgame.dylib"` is hardcoded twice in
-      `sdl_platform.cpp` → one constant switching `.dylib`/`.so`/`.dll`.
+- [x] **De-POSIX `sdl_platform.cpp`** — done 2026-07-26. `SDL_LoadObject`/
+      `SDL_LoadFunction`/`SDL_UnloadObject` for the game lib, `SDL_LoadFile`/
+      `SDL_SaveFile` for debug I/O (note: frees must be `SDL_free`), and memory
+      behind a single `sdl_platform_alloc` helper — the one real `#ifdef`.
+      Details and rationale in `docs/WINDOWS_PORT.md`.
+- [x] **Per-platform library naming**: done — `GAME_LIB`/`GAME_LIB_TEMP`/
+      `GAME_LIB_GLOB` in `game.h` cover all four hardcoded sites.
 - [ ] **Linux build**: extend `build.sh` (uname branch): `-fPIC -shared` for
       the game lib, `-Wl,-rpath,$ORIGIN`, `.so` names. SDL needs X11/Wayland
       dev headers installed to *build* — the one non-vendored prerequisite;
       document it.
-- [ ] **Windows build**: `build.bat` mirroring build.sh (cl.exe or clang-cl;
-      SDL builds with the same CMake). Flags translate: `/W4 /WX /GR- /EHa-`.
-- [ ] Boot each port and re-run the Quest 9/10 checklists there (hot reload
-      and replay are the likely breakage points).
+- [x] **Windows build**: done 2026-07-26. `build.bat` mirrors build.sh, using
+      LLVM/clang (not cl.exe — keeps flags identical to build.sh) for our code
+      and the VS-bundled CMake/Ninja for the one-time SDL build.
+- [ ] Boot each port and re-run the Quest 9/10 checklists there. **Windows: hot
+      reload verified working; replay (Quest 10) still unverified** — needs a
+      live `L` keypress. Linux untouched.
 
 ## 4. Cleanup / quality
 
-- [ ] **`git init` + `.gitignore`** (`build/`, `.cache/`, `test_copy.cpp`) —
-      there is currently *no version control*. First commit before touching
-      anything above.
+- [x] **`git init` + `.gitignore`** — done 2026-07-26. `main` is the
+      integration branch; topic branches (`imgui`, `windows-port`) merge into
+      it. `.gitignore` covers `build/`, `.cache/`, `compile_commands.json`,
+      the replay/hot-reload runtime artifacts, and `imgui.ini`.
 - [ ] Rename the global `close()` in `sdl_platform.cpp` — it overloads POSIX
       `close(int)`; works today, but one signature typo away from calling the
       wrong one.

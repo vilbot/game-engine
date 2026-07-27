@@ -1,3 +1,4 @@
+#include "SDL3/SDL_loadso.h"
 #include "game.h"
 #include "SDL3/SDL_scancode.h"
 #include "SDL3/SDL_audio.h"
@@ -12,18 +13,36 @@
 #include "SDL3/SDL_timer.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <cstdint>
 #include <cstring>
-#include <cerrno>
+#include <cstdio>
 #include <stdlib.h>
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <dlfcn.h>
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
+
+// Memory is the only place a real platform branch survives: the fixed
+// base-address hint in debug builds has no portable spelling. Everything else
+// (loading the game lib, debug file I/O) goes through SDL.
+#if defined(_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #define NOMINMAX
+    #include <windows.h>
+    #define GAME_LIB      "libgame.dll"
+    #define GAME_LIB_TEMP "libgame_temp_%d.dll"
+    #define GAME_LIB_GLOB "libgame_temp_*.dll"
+#elif defined(__APPLE__)
+    #include <sys/mman.h>
+    #include <cerrno>
+    #define GAME_LIB      "libgame.dylib"
+    #define GAME_LIB_TEMP "libgame_temp_%d.dylib"
+    #define GAME_LIB_GLOB "libgame_temp_*.dylib"
+#else
+    #include <sys/mman.h>
+    #include <cerrno>
+    #define GAME_LIB      "libgame.so"
+    #define GAME_LIB_TEMP "libgame_temp_%d.so"
+    #define GAME_LIB_GLOB "libgame_temp_*.so"
+#endif
 
 constexpr int screen_width{1280};
 constexpr int screen_height{720};
@@ -49,7 +68,7 @@ void game_update_and_render_stub(game_memory*, game_offscreen_buffer*, game_inpu
 void game_get_sound_samples_stub(game_memory*, game_sound_output_buffer*) {}
 
 struct sdl_game_code {
-    void* game_dylib;
+    SDL_SharedObject* game_dylib;
     game_update_and_render_fn* update_and_render;
     game_get_sound_samples_fn* get_sound_samples;
     bool is_valid;
@@ -62,17 +81,17 @@ sdl_game_code sdl_load_game_code() {
     result.get_sound_samples = game_get_sound_samples_stub;
 
     char dylib_path[512];
-    snprintf(dylib_path, sizeof(dylib_path), "%slibgame.dylib", g_base_path);
+    snprintf(dylib_path, sizeof(dylib_path), "%s" GAME_LIB, g_base_path);
 
     static int reload_counter = 0;
     char temp_path[512];
-    snprintf(temp_path, sizeof(temp_path), "%slibgame_temp_%d.dylib", g_base_path, reload_counter++);
+    snprintf(temp_path, sizeof(temp_path), "%s" GAME_LIB_TEMP, g_base_path, reload_counter++);
 
     if(SDL_CopyFile(dylib_path, temp_path)) {
-        result.game_dylib = dlopen(temp_path, RTLD_NOW | RTLD_LOCAL);
+        result.game_dylib = SDL_LoadObject(temp_path);
         if(result.game_dylib) {
-            game_update_and_render_fn* update = (game_update_and_render_fn*)dlsym(result.game_dylib, "game_update_and_render");
-            game_get_sound_samples_fn* samples = (game_get_sound_samples_fn*)dlsym(result.game_dylib, "game_get_sound_samples");
+            game_update_and_render_fn* update = (game_update_and_render_fn*)SDL_LoadFunction(result.game_dylib, "game_update_and_render");
+            game_get_sound_samples_fn* samples = (game_get_sound_samples_fn*)SDL_LoadFunction(result.game_dylib, "game_get_sound_samples");
             if(update && samples) {
                 result.update_and_render = update;
                 result.get_sound_samples = samples;
@@ -92,7 +111,7 @@ sdl_game_code sdl_load_game_code() {
             result.last_write_time = info.modify_time;
         }
     } else if(result.game_dylib) {
-        dlclose(result.game_dylib);
+        SDL_UnloadObject(result.game_dylib);
         result.game_dylib = nullptr;
     }
 
@@ -103,7 +122,7 @@ sdl_game_code sdl_load_game_code() {
 // symbols for loaded images; leftovers from previous runs are swept here.
 void sdl_delete_stale_temp_dylibs() {
     int count = 0;
-    char** entries = SDL_GlobDirectory(g_base_path, "libgame_temp_*.dylib", 0, &count);
+    char** entries = SDL_GlobDirectory(g_base_path, GAME_LIB_GLOB, 0, &count);
     if(entries) {
         for(int i = 0; i < count; ++i) {
             char stale_path[512];
@@ -116,7 +135,7 @@ void sdl_delete_stale_temp_dylibs() {
 
 void sdl_unload_game_code(sdl_game_code* game_code) {
     if(game_code->game_dylib) {
-        dlclose(game_code->game_dylib);
+        SDL_UnloadObject(game_code->game_dylib);
         game_code->game_dylib = nullptr;
     }
     game_code->is_valid = false;
@@ -134,7 +153,7 @@ sdl_audio_context g_audio_ctx{};
 // queued, so audio survives main-thread stalls (window drags, slow frames).
 // The main thread must hold SDL_LockAudioStream while swapping game code or
 // overwriting game memory — the lock blocks this callback.
-void SDLCALL sdl_audio_stream_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount) {
+void SDLCALL sdl_audio_stream_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int /*total_amount*/) {
     sdl_audio_context* ctx = (sdl_audio_context*)userdata;
 
     while(additional_amount > 0) {
@@ -157,37 +176,45 @@ void SDLCALL sdl_audio_stream_callback(void* userdata, SDL_AudioStream* stream, 
 DEBUG_PLATFORM_READ_ENTIRE_FILE(sdl_debug_platform_read_entire_file) {
     debug_read_file_result result{};
 
-    int file = open(filename, O_RDONLY);
-    if (file == -1) return result;
-
-    struct stat file_stat;
-    if (fstat(file, &file_stat) == -1) { close(file); return result; }
-
-    uint32_t file_size = (uint32_t)file_stat.st_size;
-    void* contents = malloc(file_size);
-    ssize_t bytes_read = read(file, contents, file_size);
-    if ((uint32_t)bytes_read == file_size) {
+    // SDL_LoadFile allocates size+1 and null-terminates; it reports the true
+    // size, so contents_size stays honest. The allocation is SDL_malloc's,
+    // which is why the matching free below must be SDL_free.
+    size_t file_size = 0;
+    void* contents = SDL_LoadFile(filename, &file_size);
+    if (contents) {
         result.contents = contents;
-        result.contents_size = file_size;
-    } else {
-        free(contents);
+        result.contents_size = (uint32_t)file_size;
     }
 
-    close(file);
     return result;
 }
 
 DEBUG_PLATFORM_FREE_FILE_MEMORY(sdl_debug_platform_free_file_memory) {
-    free(memory);
+    SDL_free(memory);
 }
 
 DEBUG_PLATFORM_WRITE_ENTIRE_FILE(sdl_debug_platform_write_entire_file) {
-    int file = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (file == -1) return false;
+    return SDL_SaveFile(filename, memory, memory_size);
+}
 
-    ssize_t bytes_written = write(file, memory, memory_size);
-    close(file);
-    return (uint32_t)bytes_written == memory_size;
+// One big zeroed allocation, failure normalized to nullptr on both platforms.
+// `base` is a hint: mmap silently relocates if the range is taken, VirtualAlloc
+// refuses and returns null — see the caller's handling of the debug fixed base.
+void* sdl_platform_alloc(void* base, size_t size) {
+#if defined(_WIN32)
+    return VirtualAlloc(base, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#else
+    void* result = mmap(base, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    return (result == MAP_FAILED) ? nullptr : result;
+#endif
+}
+
+void sdl_platform_alloc_log_failure(const char* what) {
+#if defined(_WIN32)
+    SDL_Log("%s failed: GetLastError() = %lu\n", what, GetLastError());
+#else
+    SDL_Log("%s failed: %s\n", what, strerror(errno));
+#endif
 }
 
 bool init() {
@@ -255,7 +282,9 @@ void process_keyboard_button(game_button_state* new_state, bool is_down) {
     new_state->ended_down = is_down;
 }
 
-int main(int argc, char* argv[]) {
+// Parameters unnamed: SDL_main.h #defines main to SDL_main, so this is no
+// longer the special main() that is exempt from -Wunused-parameter.
+int main(int /*argc*/, char* /*argv*/[]) {
     int exit_code{0};
 
     if(init() == false) {
@@ -272,8 +301,8 @@ int main(int argc, char* argv[]) {
         pixel_backbuffer.width = 1280;
         pixel_backbuffer.height = 720;
         pixel_backbuffer.pitch = 4 * pixel_backbuffer.width;
-        pixel_backbuffer.memory = mmap(0, (size_t)pixel_backbuffer.pitch * pixel_backbuffer.height,
-                                       PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        pixel_backbuffer.memory = sdl_platform_alloc(
+            0, (size_t)pixel_backbuffer.pitch * pixel_backbuffer.height);
 
         game_memory memory{};
         memory.permanent_storage_size = Megabytes(64);
@@ -287,19 +316,27 @@ int main(int argc, char* argv[]) {
 #else
         void* base_address = nullptr;
 #endif
-        memory.permanent_storage = mmap(base_address, total_size,
-                                        PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        memory.permanent_storage = sdl_platform_alloc(base_address, total_size);
+#if BUILD_INTERNAL
+        // VirtualAlloc refuses a taken base rather than relocating the way mmap
+        // does, so a failure here may just mean "2 TB is occupied". Retry
+        // wherever the OS likes and let the check below report the lost hint —
+        // a debug convenience must not be the reason the engine won't boot.
+        if(memory.permanent_storage == nullptr) {
+            memory.permanent_storage = sdl_platform_alloc(nullptr, total_size);
+        }
+#endif
         memory.transient_storage = (uint8_t*)memory.permanent_storage + memory.permanent_storage_size;
 
         memory.DEBUG_platform_read_entire_file = sdl_debug_platform_read_entire_file;
         memory.DEBUG_platform_free_file_memory = sdl_debug_platform_free_file_memory;
         memory.DEBUG_platform_write_entire_file = sdl_debug_platform_write_entire_file;
 
-        void* replay_memory_block = mmap(0, total_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        void* replay_memory_block = sdl_platform_alloc(0, total_size);
 
-        if(pixel_backbuffer.memory == MAP_FAILED || memory.permanent_storage == MAP_FAILED ||
-           replay_memory_block == MAP_FAILED) {
-            SDL_Log("mmap failed: %s\n", strerror(errno));
+        if(pixel_backbuffer.memory == nullptr || memory.permanent_storage == nullptr ||
+           replay_memory_block == nullptr) {
+            sdl_platform_alloc_log_failure("game memory allocation");
             platform_close();
             return 1;
         }
@@ -328,7 +365,7 @@ int main(int argc, char* argv[]) {
             Uint64 frame_start = SDL_GetPerformanceCounter();
 
             char dylib_path[512];
-            snprintf(dylib_path, sizeof(dylib_path), "%slibgame.dylib", g_base_path);
+            snprintf(dylib_path, sizeof(dylib_path), "%s" GAME_LIB, g_base_path);
 
             SDL_PathInfo current_info;
             if(SDL_GetPathInfo(dylib_path, &current_info) &&

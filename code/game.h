@@ -6,6 +6,8 @@
 #define Gigabytes(v) (Megabytes(v) * 1024LL)
 #define Terabytes(v) (Gigabytes(v) * 1024LL)
 
+#define Pi32 3.14159265359f
+
 struct debug_read_file_result {
     uint32_t contents_size;
     void* contents;
@@ -72,7 +74,13 @@ struct game_input {
     game_button_state mouse_right;
 };
 
-extern "C" {
-    void game_update_and_render(game_memory* memory, game_offscreen_buffer* buffer, game_input* input);
-    void game_get_sound_samples(game_memory* memory, game_sound_output_buffer* sound_buffer);
-}
+#if defined(_WIN32)
+    #define GAME_API extern "C" __declspec(dllexport)
+#elif defined(__APPLE__)
+    #define GAME_API extern "C"
+#else
+    #define GAME_API extern "C"
+#endif
+
+GAME_API void game_update_and_render(game_memory* memory, game_offscreen_buffer* buffer, game_input* input);
+GAME_API void game_get_sound_samples(game_memory* memory, game_sound_output_buffer* sound_buffer);
