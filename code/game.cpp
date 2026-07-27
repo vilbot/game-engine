@@ -1,4 +1,5 @@
 #include "game.h"
+#include "imgui.h"
 
 struct game_state {
     int xoffset;
@@ -27,6 +28,9 @@ GAME_API void game_get_sound_samples(game_memory* memory, game_sound_output_buff
 }
 
 GAME_API void game_update_and_render(game_memory* memory, game_offscreen_buffer* buffer, game_input* input) {
+
+    ImGui::ShowDemoWindow();
+
     game_state* state = (game_state*)memory->permanent_storage;
 
     if(!memory->is_initialized) {

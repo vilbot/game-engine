@@ -261,6 +261,16 @@ bool init() {
         success = false;
     }
 
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+    ImGui_ImplSDL3_InitForSDLRenderer(g_window, g_renderer);
+    ImGui_ImplSDLRenderer3_Init(g_renderer);
+
     // Resumed in main() once the get-callback is installed — the device must
     // not start pulling before the callback can supply samples.
 
@@ -268,11 +278,14 @@ bool init() {
 }
 
 void platform_close() {
+    ImGui_ImplSDLRenderer3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
     SDL_DestroyWindow(g_window);
-
     g_window = nullptr;
-
     SDL_Quit();
+
 }
 
 void process_keyboard_button(game_button_state* new_state, bool is_down) {
@@ -293,9 +306,9 @@ int main(int /*argc*/, char* /*argv*/[]) {
     }
     else {
         bool quit{false};
-        SDL_Event e;
+        SDL_Event event;
 
-        SDL_zero(e);
+        SDL_zero(event);
 
         game_offscreen_buffer pixel_backbuffer{};
         pixel_backbuffer.width = 1280;
@@ -376,11 +389,17 @@ int main(int /*argc*/, char* /*argv*/[]) {
                 SDL_UnlockAudioStream(g_audio_stream);
             }
 
-            while(SDL_PollEvent(&e) == true) {
-                if(e.type == SDL_EVENT_QUIT) {
+            while(SDL_PollEvent(&event) == true) {
+                ImGui_ImplSDL3_ProcessEvent(&event);
+
+                if(event.type == SDL_EVENT_QUIT) {
                     quit = true;
                 }
             }
+
+            ImGui_ImplSDLRenderer3_NewFrame();
+            ImGui_ImplSDL3_NewFrame();
+            ImGui::NewFrame();
 
             static game_input input{};
             input.controller.move_up.half_transition_count = 0;
@@ -478,9 +497,14 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
             game_code.update_and_render(&memory, &pixel_backbuffer, &input);
 
+            ImGui::Render();
+
             SDL_UpdateTexture(g_texture, NULL, pixel_backbuffer.memory, pixel_backbuffer.pitch);
             SDL_RenderClear(g_renderer);
             SDL_RenderTexture(g_renderer, g_texture, NULL, NULL);
+
+            ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), g_renderer);
+
             SDL_RenderPresent(g_renderer);
 
             Uint64 work_end = SDL_GetPerformanceCounter();

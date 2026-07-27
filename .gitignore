@@ -12,3 +12,6 @@ libgame_temp_*.dll
 *.dSYM/
 *.pdb
 *.ilk
+
+# Dear ImGui runtime layout (window positions, docking) - regenerated on exit
+/imgui.ini
